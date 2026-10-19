@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 {% if not api_key_set %}
-<p class="banner bad">ANTHROPIC_API_KEY is not set on the server - evaluation and drafting will fail.</p>
+<p class="banner bad">No Anthropic API key configured. <a href="/settings">Add one in Settings</a> before evaluating postings.</p>
 {% endif %}
 {% if profile_unset %}
 <p class="banner warn">Your profile still contains template placeholders. <a href="/profile">Fill it in</a> before evaluating postings - every score and draft is grounded in it.</p>

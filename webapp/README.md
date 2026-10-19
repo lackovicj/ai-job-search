@@ -36,8 +36,8 @@ You can edit the generated LaTeX in the browser and recompile it.
 
    | Variable | Required | Purpose |
    |---|---|---|
-   | `ANTHROPIC_API_KEY` | yes | Claude API key (console.anthropic.com) |
-   | `APP_PASSWORD` | yes | Password for HTTP basic auth. The app refuses to serve without it |
+   | `APP_PASSWORD` | yes | Password for HTTP basic auth. The app refuses to serve without it. It also encrypts the API key saved in Settings, so changing it means re-entering that key |
+   | `ANTHROPIC_API_KEY` | no | Fallback Claude API key. Normally you add the key in the app under **Settings** instead; a key saved there takes priority |
    | `APP_USER` | no | Basic-auth username, default `admin` |
    | `CLAUDE_MODEL` | no | Default `claude-opus-5-5` |
 
@@ -52,7 +52,11 @@ install therefore fails the build instead of failing your first application.
 
 ## First use
 
-Open **Profile** and replace the placeholder content: the candidate profile, behavioral
+Open **Settings** and paste your Anthropic API key (from console.anthropic.com). The app checks
+it against the API before saving it and stores it encrypted, so it can't be read from the
+database file without `APP_PASSWORD`.
+
+Then open **Profile** and replace the placeholder content: the candidate profile, behavioral
 profile, writing style, evaluation framework (your strong and weak skill areas, career goals,
 deal-breakers) and master CV. These documents are the only source of facts the drafter may
 use. Anything missing from them is left out of your CV.
@@ -72,7 +76,9 @@ depending on posting length and how many fix rounds the layout needs.
 - Claude writes the LaTeX after reading an untrusted posting, so the server refuses any source
   that uses file input, Lua, shell escape, `\catcode` or `\csname`. The compiler also runs
   with shell escape off and with an environment stripped of secrets. The entrypoint moves the
-  API key and password out of the process environment before the server starts.
+  API key and password out of the process environment before the server starts. A key entered
+  in Settings is stored only as ciphertext, under a key derived from `APP_PASSWORD`, which
+  lives only in the server's memory.
 
 ## Local development
 

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Settings - AI Job Search{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>Settings</h1>
+  {% if msg %}<p class="banner ok">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="banner bad">{{ error }}</p>{% endif %}
+
+  <h2>Anthropic API key</h2>
+  {% if key.source == "ui" %}
+    <p>A key saved here is in use (<code>{{ key.hint }}</code>).</p>
+  {% elif key.source == "env" %}
+    <p>Using <code>ANTHROPIC_API_KEY</code> from the server environment (<code>{{ key.hint }}</code>). A key saved here takes priority over it.</p>
+  {% elif key.source == "unreadable" %}
+    <p class="banner warn">A key is stored but can't be decrypted - <code>APP_PASSWORD</code> has changed since it was saved. Enter the key again.</p>
+  {% else %}
+    <p class="banner warn">No API key configured yet. Evaluation and drafting need one.</p>
+  {% endif %}
+
+  <form method="post" action="/settings/api-key" class="stack" autocomplete="off">
+    <label>{{ "Replace key" if key.source in ("ui", "env") else "API key" }}
+      <input type="password" name="api_key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" required></label>
+    <button>Verify and save</button>
+  </form>
+  {% if key.source in ("ui", "unreadable") %}
+  <form method="post" action="/settings/api-key/delete" onsubmit="return confirm('Remove the stored API key?')">
+    <button class="ghost danger">Remove stored key</button>
+  </form>
+  {% endif %}
+  <p class="muted small">Create a key at console.anthropic.com. It is checked against the API before saving and stored encrypted with a key derived from <code>APP_PASSWORD</code>. It is never shown again in full. Model: <code>{{ model }}</code>.</p>
+</section>
+{% endblock %}

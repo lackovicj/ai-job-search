@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import config, db, intake, latex, llm, main, pipeline  # noqa: E402
+from app import config, db, intake, keystore, latex, llm, main, pipeline  # noqa: E402
 
 AUTH = {"Authorization": "Basic " + base64.b64encode(b"admin:pw").decode()}
 SAME = {**AUTH, "Origin": "http://testserver"}
@@ -144,6 +144,45 @@ def test_hidden_posting_text_flagged():
     taken = intake.take_posting("", html)
     assert "fake PhD" not in taken["posting"]
     assert "⚠" in taken["guard_verdict"]
+
+
+def test_api_key_saved_from_ui(client, monkeypatch):
+    checked = []
+    monkeypatch.setattr(llm, "check_key", checked.append)
+    key = "sk-ant-api03-" + "x" * 40 + "WXYZ"
+    r = client.post("/settings/api-key", data={"api_key": key}, headers=SAME, follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    assert checked == [key]
+    # stored encrypted, never in plaintext
+    assert key not in db.get_setting("anthropic_key_enc")
+    assert keystore.active() == key
+    page = client.get("/settings", headers=AUTH).text
+    assert "…WXYZ" in page and key not in page
+    # a changed APP_PASSWORD makes the stored key unreadable, not wrong
+    monkeypatch.setattr(config, "APP_PASSWORD", "other")
+    keystore._cache.clear()
+    assert keystore.stored() is None and keystore.status()["source"] == "unreadable"
+    monkeypatch.setattr(config, "APP_PASSWORD", "pw")
+    client.post("/settings/api-key/delete", headers=SAME)
+    assert keystore.stored() == "" and keystore.active() == config.ANTHROPIC_API_KEY
+
+
+def test_api_key_rejected_keeps_old(client, monkeypatch):
+    def reject(_key):
+        raise llm.LLMError("Anthropic rejected this API key.")
+    monkeypatch.setattr(llm, "check_key", reject)
+    r = client.post("/settings/api-key", data={"api_key": "sk-ant-bad"}, headers=SAME,
+                    follow_redirects=False)
+    assert "error=" in r.headers["location"] and db.get_setting("anthropic_key_enc") == ""
+    r = client.post("/settings/api-key", data={"api_key": "not-a-key"}, headers=SAME,
+                    follow_redirects=False)
+    assert "error=" in r.headers["location"]
+
+
+def test_api_key_post_requires_same_origin(client):
+    r = client.post("/settings/api-key", data={"api_key": "sk-ant-x"},
+                    headers={**AUTH, "Origin": "https://evil.example"})
+    assert r.status_code == 403
 
 
 def test_draft_requires_evaluation():

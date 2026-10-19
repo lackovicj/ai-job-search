@@ -10,11 +10,11 @@ from datetime import date
 
 import anthropic
 
-from . import config, db
+from . import config, db, keystore
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-_client: anthropic.Anthropic | None = None
+_clients: dict[str, anthropic.Anthropic] = {}
 
 
 class LLMError(Exception):
@@ -22,12 +22,27 @@ class LLMError(Exception):
 
 
 def client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        if not config.ANTHROPIC_API_KEY:
-            raise LLMError("ANTHROPIC_API_KEY is not configured on the server.")
-        _client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=4)
-    return _client
+    key = keystore.active()
+    if not key:
+        raise LLMError("No Anthropic API key configured - add one under Settings.")
+    if key not in _clients:
+        _clients.clear()
+        _clients[key] = anthropic.Anthropic(api_key=key, max_retries=4)
+    return _clients[key]
+
+
+def check_key(key: str) -> None:
+    """Cheap authenticated call so a mistyped key fails on save, not mid-draft."""
+    try:
+        anthropic.Anthropic(api_key=key, max_retries=1).models.list(limit=1)
+    except anthropic.AuthenticationError as exc:
+        raise LLMError("Anthropic rejected this API key.") from exc
+    except anthropic.PermissionDeniedError as exc:
+        raise LLMError("This API key lacks permission to use the API.") from exc
+    except anthropic.APIConnectionError as exc:
+        raise LLMError("Could not reach the Anthropic API to verify the key.") from exc
+    except anthropic.APIStatusError as exc:
+        raise LLMError(f"Key check failed: API error {exc.status_code}.") from exc
 
 
 def skill(name: str) -> str:

@@ -7,14 +7,14 @@ import secrets
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import config, db, pipeline
+from . import config, db, keystore, llm, pipeline
 
 HERE = Path(__file__).parent
 
@@ -106,7 +106,7 @@ def index(request: Request):
         "apps": db.list_applications(),
         "final": db.FINAL_STATUSES,
         "profile_unset": "[YOUR_NAME]" in db.get_setting("profile"),
-        "api_key_set": bool(config.ANTHROPIC_API_KEY),
+        "api_key_set": bool(keystore.active()),
     })
 
 
@@ -196,6 +196,34 @@ def download(app_id: int, name: str):
     slug = "".join(c for c in slug if c.isalnum() or c in "_-")[:60] or f"app{app_id}"
     prefix = "main" if name.startswith("cv") else "cover"
     return FileResponse(path, filename=f"{prefix}_{slug}{path.suffix}")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings(request: Request, msg: str = "", error: str = ""):
+    return templates.TemplateResponse(request, "settings.html", {
+        "key": keystore.status(), "msg": msg, "error": error, "model": config.MODEL,
+    })
+
+
+@app.post("/settings/api-key")
+def save_api_key(api_key: str = Form("")):
+    key = api_key.strip()
+    if not key:
+        return RedirectResponse("/settings?error=Enter+a+key.", 303)
+    if not key.startswith("sk-ant-") or len(key) > 300 or any(c.isspace() for c in key):
+        return RedirectResponse("/settings?error=That+does+not+look+like+an+Anthropic+API+key+(sk-ant-...).", 303)
+    try:
+        llm.check_key(key)
+    except llm.LLMError as exc:
+        return RedirectResponse("/settings?" + urlencode({"error": str(exc)}), 303)
+    keystore.save(key)
+    return RedirectResponse("/settings?msg=API+key+verified+and+saved.", 303)
+
+
+@app.post("/settings/api-key/delete")
+def delete_api_key():
+    keystore.clear()
+    return RedirectResponse("/settings?msg=Stored+API+key+removed.", 303)
 
 
 @app.get("/profile", response_class=HTMLResponse)
