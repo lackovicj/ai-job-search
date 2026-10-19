@@ -1,0 +1,26 @@
+# Only the web app, the repo's tools/, the skill rule files and the stock LaTeX
+# templates go into the image. Personal application material stays out.
+.git
+.github
+**/__pycache__
+**/*.pyc
+webapp/data
+webapp/tests
+tests
+documents
+company_research
+job_scraper
+upskill
+assets
+templates
+.agents
+*.pdf
+*.log
+*.aux
+cv/*
+!cv/main_example.tex
+cover_letters/*
+!cover_letters/cover.cls
+!cover_letters/cover_example.tex
+!cover_letters/OpenFonts
+.env

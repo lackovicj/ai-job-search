@@ -119,3 +119,6 @@ company_research/*.json
 
 # Brainstorm mockups (superpowers visual companion) - never ship
 .superpowers/
+
+# Web app local data (SQLite tracker, profile, generated documents)
+webapp/data/

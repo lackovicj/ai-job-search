@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block head %}{% if a.busy %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block title %}{{ a.company or "Application" }} - AI Job Search{% endblock %}
+{% block body %}
+{% set ev = a.evaluation %}
+<section class="card">
+  <h1>{{ a.role or "Evaluating…" }}{% if a.company %} <span class="muted">at {{ a.company }}</span>{% endif %}</h1>
+  <p class="meta">
+    {% if a.location %}{{ a.location }} · {% endif %}
+    {% if a.deadline %}Deadline {{ a.deadline }} · {% endif %}
+    {% if a.source_url %}<a href="{{ a.source_url }}" rel="noreferrer noopener" target="_blank">source</a> · {% endif %}
+    {{ a.host_class }}
+  </p>
+  {% if a.busy %}<p class="banner info"><span class="spin"></span> {{ a.stage }} - this page refreshes itself. Drafting takes several minutes.</p>{% endif %}
+  {% if a.error %}<p class="banner bad">{{ a.error }}</p>{% endif %}
+  {% if a.guard_verdict and "⚠" in a.guard_verdict %}
+    <div class="banner warn"><strong>{{ a.guard_verdict }}</strong>
+      <details><summary>Findings</summary><pre>{{ a.guard_findings | tojson(indent=2) }}</pre></details>
+      Review before drafting: hidden or instruction-like text was found in this posting.</div>
+  {% elif a.guard_verdict %}<p class="muted small">{{ a.guard_verdict }}</p>{% endif %}
+  {% if a.host_class.startswith("unverified") %}
+    <p class="banner warn">⚠ Unverified source host - not a known job portal or ATS. Verify the employer and link before investing in drafting.</p>
+  {% endif %}
+
+  <div class="actions">
+    {% if ev and not a.busy %}
+    <form method="post" action="/applications/{{ a.id }}/draft"><button>{{ "Redraft" if files["cv.tex"] else "Draft CV + cover letter" }}</button></form>
+    <form method="post" action="/applications/{{ a.id }}/evaluate"><button class="ghost">Re-evaluate</button></form>
+    {% endif %}
+    {% if not a.busy %}
+    <form method="post" action="/applications/{{ a.id }}/delete" onsubmit="return confirm('Delete this application and its documents?')"><button class="ghost danger">Delete</button></form>
+    {% endif %}
+  </div>
+</section>
+
+{% if ev %}
+<section class="card">
+  <h2>Fit evaluation <span class="pill big">{{ a.fit_score }}/100</span> {{ a.fit_verdict }}</h2>
+  <table class="eval">
+    <tr><th>Eligibility gate</th><td>{{ ev.eligibility_gate.verdict }}</td><td>{{ ev.eligibility_gate.note }}</td></tr>
+    <tr><th>Language gate</th><td>{{ ev.language_gate.verdict }}</td><td>{{ ev.language_gate.note }}</td></tr>
+    <tr><th>Technical skills</th><td>{{ ev.technical.score }}</td><td>{{ ev.technical.note }}</td></tr>
+    <tr><th>Experience</th><td>{{ ev.experience.score }}</td><td>{{ ev.experience.note }}</td></tr>
+    <tr><th>Behavioral fit</th><td>{{ ev.behavioral.score }}</td><td>{{ ev.behavioral.note }}</td></tr>
+    <tr><th>Location</th><td>{{ ev.location_check.verdict }}</td><td>{{ ev.location_check.note }}</td></tr>
+    <tr><th>Career alignment</th><td>{{ ev.career.score }}</td><td>{{ ev.career.note }}</td></tr>
+  </table>
+  <div class="grid2">
+    <div><h3>Strengths</h3><ul>{% for s in ev.strengths %}<li>{{ s }}</li>{% endfor %}</ul></div>
+    <div><h3>Gaps</h3><ul>{% for g in ev.gaps %}<li>{{ g }}</li>{% endfor %}</ul></div>
+  </div>
+  <p><strong>Recommendation:</strong> {{ ev.recommendation }}</p>
+  {% if ev.free_text_fields %}<p class="muted">The posting asks for free-text form fields: {{ ev.free_text_fields | join(", ") }}.</p>{% endif %}
+</section>
+{% endif %}
+
+{% if files["cv.tex"] or files["cover.tex"] %}
+<section class="card">
+  <h2>Documents</h2>
+  <div class="actions">
+    {% for name in ["cv.pdf", "cover.pdf", "cv.tex", "cover.tex"] %}{% if files[name] %}
+      <a class="button {{ '' if name.endswith('pdf') else 'ghost' }}" href="/applications/{{ a.id }}/files/{{ name }}">{{ name }}</a>
+    {% endif %}{% endfor %}
+  </div>
+  {% if a.checks %}
+  <h3>Checks</h3>
+  <ul class="checks">
+    {% for kind, label, want in [("cv", "CV", 2), ("cover", "Cover letter", 1)] %}{% set c = a.checks.get(kind) %}{% if c %}
+      <li class="{{ 'ok' if c.ok else 'fail' }}">{{ label }}: {{ c.pages }} page(s), expected {{ want }}{% if c.problems %}<pre>{{ c.problems | join("\n") }}</pre>{% endif %}</li>
+    {% endif %}{% endfor %}
+  </ul>
+  {% if a.checks.keywords %}
+  <details><summary>ATS keyword coverage ({{ a.checks.keywords | selectattr("status", "equalto", "covered") | list | length }}/{{ a.checks.keywords | length }} found verbatim in the CV text layer)</summary>
+    <table><thead><tr><th>Keyword</th><th>Priority</th><th>Status</th></tr></thead><tbody>
+    {% for k in a.checks.keywords %}<tr><td>{{ k.term }}</td><td>{{ k.priority }}</td><td class="{{ 'ok-text' if k.status == 'covered' else 'muted' }}">{{ k.status }}</td></tr>{% endfor %}
+    </tbody></table>
+    <p class="muted small">"missing" can mean a genuine gap - never stuff keywords you cannot back up.</p>
+  </details>
+  {% endif %}
+  {% endif %}
+  {% if a.decisions %}<h3>Tailoring decisions</h3><ul>{% for d in a.decisions %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+  {% if a.review %}<details><summary>Reviewer feedback and company research</summary><div class="prose">{{ a.review }}</div></details>{% endif %}
+
+  {% if not a.busy %}
+  <details><summary>Edit LaTeX and recompile</summary>
+    <form method="post" action="/applications/{{ a.id }}/recompile" class="stack">
+      <label>CV (lualatex)<textarea name="cv_tex" rows="18" class="code">{{ tex.cv }}</textarea></label>
+      <label>Cover letter (xelatex)<textarea name="cover_tex" rows="14" class="code">{{ tex.cover }}</textarea></label>
+      <button>Save and recompile</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Tracker</h2>
+  <form method="post" action="/applications/{{ a.id }}/status" class="stack">
+    <label>Status
+      <select name="status">
+        <option value="" {{ "selected" if not a.status }}>(not tracked yet)</option>
+        {% for s in statuses %}<option value="{{ s }}" {{ "selected" if a.status == s }}>{{ s }}</option>{% endfor %}
+      </select></label>
+    <label>Notes <textarea name="notes" rows="3">{{ a.notes }}</textarea></label>
+    <button class="ghost">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <details><summary>Posting text</summary><pre class="wrap">{{ a.posting }}</pre></details>
+  <details {{ "open" if a.busy }}><summary>Activity log</summary><pre class="wrap">{{ a.log }}</pre></details>
+</section>
+{% endblock %}

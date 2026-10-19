@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Profile - AI Job Search{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>Profile</h1>
+  <p class="muted">These documents are the only source of facts for evaluations and drafts. Anything not written here is treated as unsupported and left out of your CV. They start as copies of the repo's <code>.claude/skills/job-application-assistant/</code> files.</p>
+  {% if saved %}<p class="banner ok">Saved.</p>{% endif %}
+  <form method="post" action="/profile" class="stack">
+    <label>CV language <input name="cv_language" value="{{ cv_language }}"></label>
+    {% for key, label, value in fields %}
+      <label>{{ label }}<textarea name="{{ key }}" rows="16" class="code">{{ value }}</textarea></label>
+    {% endfor %}
+    <button>Save profile</button>
+  </form>
+</section>
+{% endblock %}

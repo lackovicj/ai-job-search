@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block body %}
+{% if not api_key_set %}
+<p class="banner bad">ANTHROPIC_API_KEY is not set on the server - evaluation and drafting will fail.</p>
+{% endif %}
+{% if profile_unset %}
+<p class="banner warn">Your profile still contains template placeholders. <a href="/profile">Fill it in</a> before evaluating postings - every score and draft is grounded in it.</p>
+{% endif %}
+
+<section class="card">
+  <h2>New application</h2>
+  <form method="post" action="/applications" class="stack">
+    <label>Posting URL <input type="url" name="url" placeholder="https://..."></label>
+    <label>…or paste the posting text (preferred for LinkedIn and JavaScript-heavy sites)
+      <textarea name="text" rows="8"></textarea></label>
+    <button type="submit">Evaluate fit</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Applications</h2>
+  {% if apps %}
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Date</th><th>Company</th><th>Role</th><th>Fit</th><th>Status</th><th>Deadline</th><th>Progress</th></tr></thead>
+    <tbody>
+    {% for a in apps %}
+      <tr>
+        <td>{{ a.created[:10] }}</td>
+        <td><a href="/applications/{{ a.id }}">{{ a.company or "(pending)" }}</a></td>
+        <td>{{ a.role }}</td>
+        <td>{% if a.fit_score is not none %}<span class="pill">{{ a.fit_score }}</span> {{ a.fit_verdict }}{% endif %}</td>
+        <td>{% if a.status %}<span class="status {{ 'final' if a.status in final else 'open' }}">{{ a.status }}</span>{% endif %}</td>
+        <td>{{ a.deadline }}</td>
+        <td>{% if a.busy %}<span class="spin"></span> {{ a.stage }}{% elif a.error %}<span class="bad-text">error</span>{% else %}{{ a.stage }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">No applications yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
