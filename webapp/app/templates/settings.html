@@ -30,6 +30,53 @@
   <p class="muted small">Create a key at console.anthropic.com. It is checked against the API before saving and stored encrypted with your login password. It is never shown again in full. Model: <code>{{ model }}</code>.</p>
 </section>
 
+<section class="card" id="location">
+  <h2>Where I'm looking for work</h2>
+  <p class="muted">Every posting's location check is scored against this. Leave regions and cities empty to search the whole country.</p>
+  <form method="post" action="/settings/location" class="stack">
+    <label>Country
+      <select name="country" id="country">
+        {% for c in countries %}<option value="{{ c }}" {{ "selected" if loc.country == c }}>{{ c }}</option>{% endfor %}
+      </select></label>
+    <label id="other-country" {{ "hidden" if loc.country != "Other" }}>Country name <input name="other_country" value="{{ loc.other_country }}"></label>
+
+    {% for country, names in regions.items() %}
+    <fieldset class="regions" data-country="{{ country }}" {{ "hidden" if loc.country != country }}>
+      <legend>Regions</legend>
+      {% for r in names %}
+      <label class="check"><input type="checkbox" name="regions" value="{{ r }}" {{ "checked" if r in loc.regions and loc.country == country }} {{ "disabled" if loc.country != country }}> {{ r }}</label>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+
+    <label>Cities (comma-separated, optional) <input name="cities" value="{{ loc.cities }}" placeholder="Bratislava, Trnava"></label>
+
+    <fieldset>
+      <legend>Work mode</legend>
+      {% for key, label in modes.items() %}
+      <label class="check"><input type="checkbox" name="modes" value="{{ key }}" {{ "checked" if key in loc.modes }}> {{ label }}</label>
+      {% endfor %}
+      <label class="check"><input type="checkbox" name="remote_abroad" {{ "checked" if loc.remote_abroad }}> Fully remote for employers in other countries is fine</label>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="relocate" {{ "checked" if loc.relocate }}> I'm willing to relocate</label>
+    <button>Save location</button>
+  </form>
+</section>
+<script>
+  (function () {
+    var select = document.getElementById("country");
+    function sync() {
+      document.querySelectorAll("fieldset.regions").forEach(function (fs) {
+        var on = fs.dataset.country === select.value;
+        fs.hidden = !on;
+        fs.querySelectorAll("input").forEach(function (i) { i.disabled = !on; });
+      });
+      document.getElementById("other-country").hidden = select.value !== "Other";
+    }
+    select.addEventListener("change", sync);
+  })();
+</script>
+
 <section class="card">
   <h2>Login</h2>
   <p>Logged in as <strong>{{ username }}</strong>.</p>

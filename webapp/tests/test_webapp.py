@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import auth, config, db, intake, keystore, latex, llm, main, pipeline  # noqa: E402
+from app import auth, config, db, intake, keystore, latex, llm, locations, main, pipeline  # noqa: E402
 
 SAME = {"Origin": "http://testserver"}
 PASSWORD = "correct horse battery"
@@ -209,6 +209,104 @@ def test_api_key_rejected(client, monkeypatch):
     r = client.post("/settings/api-key", data={"api_key": "not-a-key"}, headers=SAME,
                     follow_redirects=False)
     assert "error=" in r.headers["location"]
+
+
+def test_location_defaults_to_slovakia(client):
+    locations.save({})
+    assert locations.get()["country"] == "Slovakia"
+    assert "anywhere in Slovakia" in locations.describe()
+
+
+def test_location_saved_and_used_in_prompts(client):
+    r = client.post("/settings/location", headers=SAME, follow_redirects=False, data={
+        "country": "Slovakia", "regions": ["Bratislavský kraj", "Trnavský kraj", "Wien"],
+        "cities": "Senec", "modes": ["hybrid", "remote"], "relocate": "",
+    })
+    assert r.status_code == 303
+    loc = locations.get()
+    assert loc["regions"] == ["Bratislavský kraj", "Trnavský kraj"]  # Wien is not a SK region
+    assert loc["modes"] == ["hybrid", "remote"] and not loc["relocate"]
+    text = llm._profile_block()
+    assert "Bratislavský kraj, Trnavský kraj, Senec (Slovakia)" in text
+    assert "relocation is a deal-breaker" in text and "on-site" not in text
+    page = client.get("/settings").text
+    assert 'value="Bratislavský kraj" checked' in page
+
+
+def test_location_other_country(client):
+    client.post("/settings/location", headers=SAME, data={
+        "country": "Other", "other_country": "Slovenia", "cities": "Ljubljana", "modes": ["onsite"]})
+    assert "Ljubljana (Slovenia)" in locations.describe()
+
+
+IMPORTED = {
+    "candidate_profile": "# Candidate Profile\n- **Name:** Jozef Lackovic",
+    "master_cv_tex": "\\documentclass{moderncv}\n% imported",
+    "cv_language": "Slovak", "home_city": "Nitra",
+    "missing": ["Behavioral profile", "GitHub URL"],
+}
+
+
+def _wait_import():
+    for _ in range(50):
+        if pipeline.import_state().get("status") != "running":
+            return pipeline.import_state()
+        time.sleep(0.1)
+    raise AssertionError("import did not finish")
+
+
+def test_cv_import_review_then_apply(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(llm, "import_cv", lambda pdf: seen.append(pdf) or IMPORTED)
+    locations.save({})
+    before = db.get_setting("profile")
+    r = client.post("/profile/import", headers=SAME, follow_redirects=False,
+                    files={"file": ("cv.pdf", b"%PDF-1.7 fake", "application/pdf")})
+    assert r.headers["location"] == "/profile/import"
+    assert _wait_import()["status"] == "done" and seen == [b"%PDF-1.7 fake"]
+    assert db.get_setting("profile") == before  # nothing saved before review
+
+    page = client.get("/profile/import").text
+    assert "Jozef Lackovic" in page and "GitHub URL" in page and "Add Nitra" in page
+
+    client.post("/profile/import/apply", headers=SAME, data={
+        "use_profile": "on", "candidate_profile": IMPORTED["candidate_profile"] + " (edited)",
+        "use_master_cv": "on", "master_cv": IMPORTED["master_cv_tex"],
+        "use_language": "on", "cv_language": "Slovak", "use_city": "on"})
+    assert db.get_setting("profile").endswith("(edited)")
+    assert db.get_setting("master_cv") == IMPORTED["master_cv_tex"]
+    assert db.get_setting("cv_language") == "Slovak"
+    assert locations.get()["cities"] == "Nitra"
+    assert pipeline.import_state() == {}
+
+
+def test_cv_import_unticked_keeps_current(client, monkeypatch):
+    monkeypatch.setattr(llm, "import_cv", lambda pdf: IMPORTED)
+    before = db.get_setting("master_cv")
+    client.post("/profile/import", headers=SAME,
+                files={"file": ("cv.pdf", b"%PDF-1.4 x", "application/pdf")})
+    _wait_import()
+    client.post("/profile/import/apply", headers=SAME, data={
+        "use_profile": "on", "candidate_profile": "new", "master_cv": "IGNORED"})
+    assert db.get_setting("master_cv") == before and db.get_setting("profile") == "new"
+
+
+def test_cv_import_rejects_non_pdf(client):
+    r = client.post("/profile/import", headers=SAME,
+                    files={"file": ("cv.docx", b"PK\x03\x04", "application/octet-stream")})
+    assert r.status_code == 400
+
+
+def test_cv_import_error_shown(client, monkeypatch):
+    def boom(_pdf):
+        raise llm.LLMError("Claude declined this request (refusal).")
+    monkeypatch.setattr(llm, "import_cv", boom)
+    client.post("/profile/import", headers=SAME,
+                files={"file": ("cv.pdf", b"%PDF-1.4 x", "application/pdf")})
+    assert _wait_import()["status"] == "error"
+    assert "declined" in client.get("/profile/import").text
+    client.post("/profile/import/discard", headers=SAME)
+    assert pipeline.import_state() == {}
 
 
 def test_reset_account_returns_to_setup(client):

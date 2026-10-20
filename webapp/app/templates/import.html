@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block head %}{% if s.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block title %}CV import - AI Job Search{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>CV import <span class="muted">{{ s.filename }}</span></h1>
+
+  {% if s.status == "running" %}
+    <p class="banner info"><span class="spin"></span> Claude is reading your CV. This usually takes one to two minutes, and the page refreshes itself.</p>
+
+  {% elif s.status == "error" %}
+    <p class="banner bad">{{ s.error }}</p>
+    <form method="post" action="/profile/import/discard"><button class="ghost">Back to profile</button></form>
+
+  {% else %}{% set r = s.result %}
+    <p>Check what was extracted and correct anything that's wrong. Tick what should replace your current profile, then save. Nothing has been saved yet.</p>
+    {% if r.missing %}
+    <div class="banner warn"><strong>Not found in your CV - worth adding to the profile by hand:</strong>
+      <ul>{% for m in r.missing %}<li>{{ m }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    <form method="post" action="/profile/import/apply" class="stack">
+      <label class="check"><input type="checkbox" name="use_profile" checked> Replace the candidate profile</label>
+      <textarea name="candidate_profile" rows="22" class="code">{{ r.candidate_profile }}</textarea>
+
+      <label class="check"><input type="checkbox" name="use_master_cv" checked> Replace the master CV</label>
+      <textarea name="master_cv" rows="22" class="code">{{ r.master_cv_tex }}</textarea>
+
+      <label class="check"><input type="checkbox" name="use_language" checked> Set the CV language to
+        <input name="cv_language" value="{{ r.cv_language }}" class="inline-input"></label>
+      <p class="muted small">This is the language your tailored CVs are written in. Cover letters always follow the posting's language.</p>
+
+      {% if offer_city %}
+      <label class="check"><input type="checkbox" name="use_city" checked> Add {{ r.home_city }} to the cities where I'm looking for work</label>
+      {% endif %}
+      <div class="actions"><button>Save to profile</button></div>
+    </form>
+    <form method="post" action="/profile/import/discard"><button class="ghost danger">Discard import</button></form>
+  {% endif %}
+</section>
+{% endblock %}

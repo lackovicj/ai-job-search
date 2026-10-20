@@ -71,6 +71,8 @@ def init() -> None:
         conn.execute("UPDATE applications SET busy=0, error=CASE WHEN error='' "
                      "THEN 'Interrupted by a restart - run the step again.' ELSE error END "
                      "WHERE busy=1")
+        conn.execute("UPDATE settings SET value='' WHERE key='cv_import' "
+                     "AND value LIKE '%\"status\": \"running\"%'")
 
 
 def _decode(row: sqlite3.Row | None) -> dict | None:

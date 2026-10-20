@@ -23,6 +23,13 @@ nav { align-items: center; flex-wrap: wrap; }
 form.inline { margin: 0; display: inline; }
 button.link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 400; }
 .card.narrow { max-width: 440px; margin: 40px auto; }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; }
+label.check input[type=checkbox] { width: auto; margin: 0; }
+input.inline-input { width: auto; max-width: 200px; padding: 4px 8px; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 16px; }
+fieldset[hidden], label[hidden] { display: none; }
+legend { font-weight: 600; font-size: .9rem; padding: 0 4px; }
 main { max-width: 1000px; margin: 0 auto; padding: 16px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
 h1 { font-size: 1.4rem; margin: 0 0 4px; } h2 { font-size: 1.15rem; margin: 0 0 12px; } h3 { font-size: 1rem; margin: 16px 0 6px; }

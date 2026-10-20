@@ -9,6 +9,9 @@ evaluation framework, writing style and template guides from
 
 ## What it does
 
+0. **Setup.** Import your CV from a PDF into the profile and set the country, regions and
+   cities where you're looking for work.
+
 1. **Intake.** Takes a URL or pasted text. A URL is fetched only after the robots.txt gate
    passes and only when it resolves to a public address. Pasted text and fetched pages both go
    through the posting integrity gate, and the source host is classified as a portal board, an
@@ -64,11 +67,18 @@ install therefore fails the build instead of failing your first application.
 2. **Add your API key.** Open **Settings** and paste your Anthropic API key (from
    console.anthropic.com). The app checks it against the API before saving it and stores it
    encrypted with your login password.
+3. **Import your CV.** On **Profile**, upload your current CV as a PDF. Claude extracts it into
+   the candidate profile and a full moderncv master CV, extraction only with nothing invented,
+   and lists what your CV doesn't contain. You review and edit the result before anything is
+   saved.
+4. **Set where you're looking.** In **Settings → Where I'm looking for work**, pick the country
+   (Slovakia by default), tick regions and add cities, and choose work modes and relocation.
+   Every posting's location check is scored against this.
+5. **Fill in the rest by hand.** The behavioral profile, writing style and evaluation framework
+   (strong and weak skill areas, career goals, deal-breakers) aren't in a CV.
 
-Then open **Profile** and replace the placeholder content: the candidate profile, behavioral
-profile, writing style, evaluation framework (your strong and weak skill areas, career goals,
-deal-breakers) and master CV. These documents are the only source of facts the drafter may
-use. Anything missing from them is left out of your CV.
+The profile documents and master CV are the only source of facts the drafter may use. Anything
+missing from them is left out of your CV.
 
 **Forgotten password:** open your app's **Terminal** in Coolify and run
 `python /app/webapp/reset_login.py`, then restart the app and create a new login with the new

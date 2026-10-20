@@ -7,12 +7,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, db, keystore, llm, pipeline
+from . import auth, config, db, keystore, llm, locations, pipeline
 
 HERE = Path(__file__).parent
 
@@ -250,8 +250,15 @@ def download(app_id: int, name: str):
 def settings(request: Request, msg: str = "", error: str = ""):
     return templates.TemplateResponse(request, "settings.html", {
         "key": keystore.status(), "msg": msg, "error": error, "model": config.MODEL,
-        "username": auth.username(),
+        "username": auth.username(), "loc": locations.get(), "regions": locations.REGIONS,
+        "countries": locations.COUNTRIES, "modes": locations.MODES,
     })
+
+
+@app.post("/settings/location")
+async def save_location(request: Request):
+    locations.save(locations.from_form(await request.form()))
+    return RedirectResponse("/settings?msg=Job+search+location+saved.#location", 303)
 
 
 @app.post("/settings/password")
@@ -298,7 +305,67 @@ def profile(request: Request, saved: int = 0):
     fields.append(("master_cv", "Master CV (LaTeX, source of truth for facts)", db.get_setting("master_cv")))
     return templates.TemplateResponse(request, "profile.html", {
         "fields": fields, "cv_language": db.get_setting("cv_language"), "saved": saved,
+        "import_state": pipeline.import_state(),
     })
+
+
+MAX_PDF_BYTES = 15 * 1024 * 1024
+
+
+@app.post("/profile/import")
+async def import_cv(file: UploadFile = File(...)):
+    if pipeline.import_state().get("status") == "running":
+        return RedirectResponse("/profile/import", 303)
+    data = await file.read(MAX_PDF_BYTES + 1)
+    if len(data) > MAX_PDF_BYTES:
+        raise HTTPException(400, "The PDF is larger than 15 MB.")
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(400, "That file is not a PDF.")
+    if not keystore.active():
+        return RedirectResponse("/settings?error=Add+your+Anthropic+API+key+first.", 303)
+    pipeline.start_import(data, (file.filename or "cv.pdf")[:120])
+    return RedirectResponse("/profile/import", 303)
+
+
+@app.get("/profile/import", response_class=HTMLResponse)
+def import_review(request: Request):
+    state = pipeline.import_state()
+    if not state:
+        return RedirectResponse("/profile", 303)
+    loc = locations.get()
+    home = (state.get("result") or {}).get("home_city", "").strip()
+    return templates.TemplateResponse(request, "import.html", {
+        "s": state, "offer_city": bool(home) and home.lower() not in loc["cities"].lower(),
+    })
+
+
+@app.post("/profile/import/apply")
+async def import_apply(request: Request):
+    form = await request.form()
+    state = pipeline.import_state()
+    if state.get("status") != "done":
+        return RedirectResponse("/profile", 303)
+    text = lambda k: str(form.get(k, "")).replace("\r\n", "\n")  # noqa: E731
+    if form.get("use_profile") == "on":
+        db.set_setting("profile", text("candidate_profile"))
+    if form.get("use_master_cv") == "on":
+        db.set_setting("master_cv", text("master_cv"))
+    if form.get("use_language") == "on" and text("cv_language").strip():
+        db.set_setting("cv_language", text("cv_language").strip())
+    home = state["result"].get("home_city", "").strip()
+    if form.get("use_city") == "on" and home:
+        loc = locations.get()
+        loc["cities"] = ", ".join(filter(None, [loc["cities"].strip(), home]))
+        locations.save(loc)
+    pipeline.clear_import()
+    return RedirectResponse("/profile?saved=1", 303)
+
+
+@app.post("/profile/import/discard")
+def import_discard():
+    if pipeline.import_state().get("status") != "running":
+        pipeline.clear_import()
+    return RedirectResponse("/profile", 303)
 
 
 @app.post("/profile")

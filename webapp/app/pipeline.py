@@ -1,5 +1,6 @@
 """Background jobs: evaluate a posting, then draft -> compile -> review -> revise -> verify."""
 
+import json
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -117,6 +118,40 @@ def draft(app_id: int) -> None:
     if not (cv_res.ok and cover_res.ok):
         db.update_application(app_id, error="Documents were produced but some checks still fail - "
                                              "see Checks. Edit the LaTeX and recompile, or redraft.")
+
+
+# ------------------------------------------------------------------ CV import
+# One import at a time; its state lives in settings so the review page survives reloads.
+
+def import_state() -> dict:
+    try:
+        return json.loads(db.get_setting("cv_import") or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
+def _set_import(**state) -> None:
+    db.set_setting("cv_import", json.dumps(state, ensure_ascii=False))
+
+
+def start_import(pdf: bytes, filename: str) -> None:
+    _set_import(status="running", filename=filename, started=db.now())
+    _pool.submit(_run_import, pdf, filename)
+
+
+def _run_import(pdf: bytes, filename: str) -> None:
+    try:
+        result = llm.import_cv(pdf)
+    except llm.LLMError as exc:
+        _set_import(status="error", filename=filename, error=str(exc))
+    except Exception as exc:
+        _set_import(status="error", filename=filename, error=f"Unexpected error: {exc}")
+    else:
+        _set_import(status="done", filename=filename, result=result)
+
+
+def clear_import() -> None:
+    db.set_setting("cv_import", "")
 
 
 def recompile(app_id: int, cv_tex: str, cover_tex: str) -> None:

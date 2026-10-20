@@ -2,6 +2,24 @@
 {% block title %}Profile - AI Job Search{% endblock %}
 {% block body %}
 <section class="card">
+  <h2>Import from your CV</h2>
+  {% if import_state.status == "running" %}
+    <p class="banner info"><span class="spin"></span> Reading {{ import_state.filename }}… <a href="/profile/import">Show progress</a></p>
+  {% elif import_state.status in ("done", "error") %}
+    <p class="banner {{ 'ok' if import_state.status == 'done' else 'bad' }}">An import of {{ import_state.filename }} is waiting. <a href="/profile/import">Review it</a></p>
+  {% else %}
+  <p class="muted">Upload your current CV as a PDF. Claude extracts your experience, education, skills
+    and contact details into the candidate profile and master CV below. You review the result before
+    anything is saved. Your behavioral profile and evaluation framework aren't in a CV, so fill
+    those in by hand.</p>
+  <form method="post" action="/profile/import" enctype="multipart/form-data" class="stack">
+    <label>CV (PDF, max 15 MB) <input type="file" name="file" accept="application/pdf,.pdf" required></label>
+    <button>Import CV</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
   <h1>Profile</h1>
   <p class="muted">These documents are the only source of facts for evaluations and drafts. Anything not written here is treated as unsupported and left out of your CV. They start as copies of the repo's <code>.claude/skills/job-application-assistant/</code> files.</p>
   {% if saved %}<p class="banner ok">Saved.</p>{% endif %}
