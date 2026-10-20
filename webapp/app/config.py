@@ -1,6 +1,6 @@
 """Runtime configuration, read once at import time.
 
-Secrets: the container entrypoint moves ANTHROPIC_API_KEY and APP_PASSWORD out of
+Secrets: the container entrypoint moves an optional ANTHROPIC_API_KEY out of
 the process environment into files under SECRETS_DIR, which load_secret() reads once
 and deletes. The LaTeX compiler runs LLM-written source; keeping the key out of
 /proc/<pid>/environ means a hostile posting that steers the drafter into reading
@@ -21,7 +21,6 @@ MASTER_CV_SEED = REPO / "cv" / "main_example.tex"
 COVER_EXAMPLE = REPO / "cover_letters" / "cover_example.tex"
 
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
-APP_USER = os.environ.get("APP_USER", "admin")
 
 # The repo's own helpers (posting guard, robots gate, PDF verifier) are imported,
 # not copied, so the web app and the Claude Code workflow share one implementation.
@@ -40,8 +39,8 @@ def load_secret(name: str) -> str:
     return os.environ.pop(name, "")
 
 
+# Optional fallback; normally the key is entered in the web UI (see keystore.py).
 ANTHROPIC_API_KEY = load_secret("ANTHROPIC_API_KEY")
-APP_PASSWORD = load_secret("APP_PASSWORD")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "applications").mkdir(exist_ok=True)

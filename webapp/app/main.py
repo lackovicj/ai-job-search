@@ -1,9 +1,7 @@
 """FastAPI entry point: tracker, application detail, profile editor."""
 
-import base64
 import csv
 import io
-import secrets
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import config, db, keystore, llm, pipeline
+from . import auth, config, db, keystore, llm, pipeline
 
 HERE = Path(__file__).parent
 
@@ -23,6 +21,7 @@ HERE = Path(__file__).parent
 async def lifespan(_app: FastAPI):
     db.init()
     seed_settings()
+    auth.init_setup_code()
     yield
 
 
@@ -51,35 +50,84 @@ def seed_settings() -> None:
         db.set_setting("cv_language", "English")
 
 
+PUBLIC_PATHS = {"/healthz", "/login", "/setup"}
+
+
 @app.middleware("http")
 async def guard(request: Request, call_next):
-    if request.url.path == "/healthz":
+    path = request.url.path
+    if path == "/healthz":
         return await call_next(request)
-    if not config.APP_PASSWORD:
-        return PlainTextResponse("APP_PASSWORD is not set on the server; refusing to serve.", 503)
-    if not _authorized(request.headers.get("authorization", "")):
-        return Response("Authentication required", 401,
-                        {"WWW-Authenticate": 'Basic realm="AI Job Search", charset="UTF-8"'})
-    # Basic auth is replayed by the browser on cross-site requests, so state-changing
-    # requests must come from this origin.
+    # State-changing requests must come from this origin (login and setup included).
     if request.method not in ("GET", "HEAD") and not _same_origin(request):
         return PlainTextResponse("Cross-site request refused", 403)
+    if not path.startswith("/static/"):
+        if not auth.has_account():
+            if path != "/setup":
+                return RedirectResponse("/setup", 303)
+        elif path not in PUBLIC_PATHS and not auth.valid_session(request.cookies.get(auth.SESSION_COOKIE)):
+            return RedirectResponse("/login", 303)
     response = await call_next(request)
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Cache-Control", "no-store")
     return response
 
 
-def _authorized(header: str) -> bool:
-    if not header.lower().startswith("basic "):
-        return False
-    try:
-        user, _, password = base64.b64decode(header[6:]).decode("utf-8").partition(":")
-    except Exception:
-        return False
-    return (secrets.compare_digest(user.encode(), config.APP_USER.encode())
-            & secrets.compare_digest(password.encode(), config.APP_PASSWORD.encode()))
+def _start_session(request: Request, password: str) -> RedirectResponse:
+    keystore.unlock(password)
+    response = RedirectResponse("/", 303)
+    https = (request.headers.get("x-forwarded-proto") or request.url.scheme) == "https"
+    response.set_cookie(auth.SESSION_COOKIE, auth.new_session(), max_age=auth.SESSION_SECONDS,
+                        httponly=True, samesite="lax", secure=https, path="/")
+    return response
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page(request: Request, error: str = ""):
+    if auth.has_account():
+        return RedirectResponse("/login", 303)
+    return templates.TemplateResponse(request, "setup.html", {"error": error, "hide_nav": True})
+
+
+@app.post("/setup")
+def setup(request: Request, code: str = Form(""), username: str = Form(""),
+          password: str = Form(""), confirm: str = Form("")):
+    if auth.has_account():
+        return RedirectResponse("/login", 303)
+    username = username.strip()
+    problem = ("Choose a username." if not username
+               else auth.check_new_password(password, confirm))
+    if not problem and not auth.create_account(code, username, password):
+        problem = "Wrong setup code. Copy it from the app's log in Coolify (Logs tab)."
+    if problem:
+        return RedirectResponse("/setup?" + urlencode({"error": problem}), 303)
+    return _start_session(request, password)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, error: str = ""):
+    if auth.valid_session(request.cookies.get(auth.SESSION_COOKIE)):
+        return RedirectResponse("/", 303)
+    return templates.TemplateResponse(request, "login.html", {"error": error, "hide_nav": True})
+
+
+@app.post("/login")
+def login(request: Request, username: str = Form(""), password: str = Form("")):
+    if auth.locked_out():
+        return RedirectResponse("/login?error=Too+many+failed+attempts.+Try+again+in+15+minutes.", 303)
+    if not auth.verify(username.strip(), password):
+        return RedirectResponse("/login?error=Wrong+username+or+password.", 303)
+    return _start_session(request, password)
+
+
+@app.post("/logout")
+def logout(request: Request):
+    auth.end_session(request.cookies.get(auth.SESSION_COOKIE))
+    response = RedirectResponse("/login", 303)
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    return response
 
 
 def _same_origin(request: Request) -> bool:
@@ -202,7 +250,22 @@ def download(app_id: int, name: str):
 def settings(request: Request, msg: str = "", error: str = ""):
     return templates.TemplateResponse(request, "settings.html", {
         "key": keystore.status(), "msg": msg, "error": error, "model": config.MODEL,
+        "username": auth.username(),
     })
+
+
+@app.post("/settings/password")
+def change_password(request: Request, current: str = Form(""), password: str = Form(""),
+                    confirm: str = Form("")):
+    problem = auth.check_new_password(password, confirm)
+    if not problem and not auth.verify(auth.username(), current):
+        problem = "The current password is wrong."
+    if problem:
+        return RedirectResponse("/settings?" + urlencode({"error": problem}), 303)
+    keystore.rekey(password)
+    auth.set_password(auth.username(), password)
+    auth.end_other_sessions(request.cookies.get(auth.SESSION_COOKIE))
+    return RedirectResponse("/settings?msg=Password+changed.", 303)
 
 
 @app.post("/settings/api-key")
@@ -216,7 +279,10 @@ def save_api_key(api_key: str = Form("")):
         llm.check_key(key)
     except llm.LLMError as exc:
         return RedirectResponse("/settings?" + urlencode({"error": str(exc)}), 303)
-    keystore.save(key)
+    try:
+        keystore.save(key)
+    except RuntimeError:
+        return RedirectResponse("/login", 303)
     return RedirectResponse("/settings?msg=API+key+verified+and+saved.", 303)
 
 

@@ -12,7 +12,7 @@
   {% elif key.source == "env" %}
     <p>Using <code>ANTHROPIC_API_KEY</code> from the server environment (<code>{{ key.hint }}</code>). A key saved here takes priority over it.</p>
   {% elif key.source == "unreadable" %}
-    <p class="banner warn">A key is stored but can't be decrypted - <code>APP_PASSWORD</code> has changed since it was saved. Enter the key again.</p>
+    <p class="banner warn">A key is stored but can't be decrypted. Enter the key again.</p>
   {% else %}
     <p class="banner warn">No API key configured yet. Evaluation and drafting need one.</p>
   {% endif %}
@@ -27,6 +27,18 @@
     <button class="ghost danger">Remove stored key</button>
   </form>
   {% endif %}
-  <p class="muted small">Create a key at console.anthropic.com. It is checked against the API before saving and stored encrypted with a key derived from <code>APP_PASSWORD</code>. It is never shown again in full. Model: <code>{{ model }}</code>.</p>
+  <p class="muted small">Create a key at console.anthropic.com. It is checked against the API before saving and stored encrypted with your login password. It is never shown again in full. Model: <code>{{ model }}</code>.</p>
+</section>
+
+<section class="card">
+  <h2>Login</h2>
+  <p>Logged in as <strong>{{ username }}</strong>.</p>
+  <form method="post" action="/settings/password" class="stack">
+    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>New password (at least 10 characters) <input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+    <label>Repeat new password <input type="password" name="confirm" autocomplete="new-password" minlength="10" required></label>
+    <button class="ghost">Change password</button>
+  </form>
+  <p class="muted small">Changing the password logs out your other devices. Forgot it? Run <code>python /app/webapp/reset_login.py</code> in the app's Terminal in Coolify, restart, and create a new login. Your applications are kept; the API key has to be entered again.</p>
 </section>
 {% endblock %}

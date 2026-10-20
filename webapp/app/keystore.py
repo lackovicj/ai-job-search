@@ -2,56 +2,83 @@
 
 The key lands in the SQLite file under /data, which the LaTeX compiler (running
 LLM-written source as the same OS user) could in principle read. So it is stored
-encrypted with a key derived from APP_PASSWORD, which exists only in this process's
-memory (config.load_secret removes it from the environment and from disk). A copy
-of app.db alone does not reveal the API key. Changing APP_PASSWORD makes the stored
-key unreadable; the UI then asks for it again.
+encrypted under a key derived from the login password. The password is never
+stored, only its scrypt hash with a different salt, so the derived key exists only
+in memory: login unlocks it, a restart forgets it until the next login. A copy of
+app.db alone does not reveal the API key.
 """
 
 import base64
+import hashlib
 import os
+import threading
 
 from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from . import config, db
 
-_cache: dict[str, str] = {}
+_lock = threading.Lock()
+_fernet: Fernet | None = None
 
 
-def _fernet(salt: bytes) -> Fernet:
-    kdf = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1)
-    return Fernet(base64.urlsafe_b64encode(kdf.derive(config.APP_PASSWORD.encode())))
+def _derive(password: str, salt: bytes) -> Fernet:
+    raw = hashlib.scrypt(password.encode(), salt=salt, n=2**15, r=8, p=1,
+                         maxmem=64 * 1024 * 1024, dklen=32)
+    return Fernet(base64.urlsafe_b64encode(raw))
+
+
+def _salt() -> bytes:
+    stored = db.get_setting("anthropic_key_salt")
+    if stored:
+        return base64.b64decode(stored)
+    salt = os.urandom(16)
+    db.set_setting("anthropic_key_salt", base64.b64encode(salt).decode())
+    return salt
+
+
+def unlock(password: str) -> None:
+    global _fernet
+    fernet = _derive(password, _salt())
+    with _lock:
+        _fernet = fernet
+
+
+def rekey(new_password: str) -> None:
+    """Password change: re-encrypt the stored key under the new password."""
+    global _fernet
+    current = stored()
+    salt = os.urandom(16)
+    db.set_setting("anthropic_key_salt", base64.b64encode(salt).decode())
+    fernet = _derive(new_password, salt)
+    with _lock:
+        _fernet = fernet
+    db.set_setting("anthropic_key_enc", fernet.encrypt(current.encode()).decode() if current else "")
 
 
 def save(api_key: str) -> None:
-    salt = os.urandom(16)
-    token = _fernet(salt).encrypt(api_key.encode())
-    db.set_setting("anthropic_key_salt", base64.b64encode(salt).decode())
-    db.set_setting("anthropic_key_enc", token.decode())
-    _cache.clear()
+    with _lock:
+        if _fernet is None:
+            raise RuntimeError("Key store is locked; log in again.")
+        db.set_setting("anthropic_key_enc", _fernet.encrypt(api_key.encode()).decode())
 
 
 def clear() -> None:
     db.set_setting("anthropic_key_enc", "")
-    db.set_setting("anthropic_key_salt", "")
-    _cache.clear()
 
 
-def stored() -> str:
-    """Decrypted UI key, '' if none, None if present but undecryptable."""
+def stored() -> str | None:
+    """Decrypted UI key, '' if none, None if present but locked or undecryptable."""
     token = db.get_setting("anthropic_key_enc")
     if not token:
         return ""
-    if token in _cache:
-        return _cache[token]
-    try:
-        salt = base64.b64decode(db.get_setting("anthropic_key_salt"))
-        value = _fernet(salt).decrypt(token.encode()).decode()
-    except (InvalidToken, ValueError):
+    with _lock:
+        fernet = _fernet
+    if fernet is None:
         return None
-    _cache[token] = value
-    return value
+    try:
+        return fernet.decrypt(token.encode()).decode()
+    except InvalidToken:
+        return None
 
 
 def active() -> str:

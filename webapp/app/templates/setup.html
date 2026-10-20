@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Create login - AI Job Search{% endblock %}
+{% block body %}
+<section class="card narrow">
+  <h1>Create your login</h1>
+  <p class="muted">First start: create the account you will log in with. To prove this is your
+    server, enter the setup code printed in the app's log (Coolify → your app → <strong>Logs</strong>).</p>
+  {% if error %}<p class="banner bad">{{ error }}</p>{% endif %}
+  <form method="post" action="/setup" class="stack" autocomplete="off">
+    <label>Setup code <input name="code" placeholder="XXXX-XXXX-XXXX" required autofocus spellcheck="false"></label>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password (at least 10 characters) <input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+    <label>Repeat password <input type="password" name="confirm" autocomplete="new-password" minlength="10" required></label>
+    <button>Create login</button>
+  </form>
+</section>
+{% endblock %}

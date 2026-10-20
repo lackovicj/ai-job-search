@@ -10,12 +10,15 @@
 <body>
   <header class="top">
     <a class="brand" href="/">AI Job Search</a>
+    {% if not hide_nav %}
     <nav>
       <a href="/">Applications</a>
       <a href="/profile">Profile</a>
       <a href="/settings">Settings</a>
       <a href="/tracker.csv">Export CSV</a>
+      <form method="post" action="/logout" class="inline"><button class="link">Log out</button></form>
     </nav>
+    {% endif %}
   </header>
   <main>{% block body %}{% endblock %}</main>
 </body>

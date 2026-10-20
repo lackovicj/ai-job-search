@@ -1,6 +1,6 @@
 #!/bin/sh
-# Starts as root only to fix volume ownership and park the secrets in files, then
-# drops to the unprivileged `app` user. The secrets are unset before exec so they
+# Starts as root only to fix volume ownership and park an optional env API key in a
+# file, then drops to the unprivileged `app` user. The key is unset before exec so it
 # never appear in the server's /proc/<pid>/environ, which LLM-written LaTeX running
 # as the same user could otherwise read (see webapp/app/config.py).
 set -eu
@@ -14,11 +14,8 @@ umask 077
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   printf '%s' "$ANTHROPIC_API_KEY" > "$SECRETS_DIR/anthropic_api_key"
 fi
-if [ -n "${APP_PASSWORD:-}" ]; then
-  printf '%s' "$APP_PASSWORD" > "$SECRETS_DIR/app_password"
-fi
 chown -R app:app "$SECRETS_DIR"
-unset ANTHROPIC_API_KEY APP_PASSWORD
+unset ANTHROPIC_API_KEY
 
 # One worker: drafting runs in background threads of this process and state is SQLite.
 exec setpriv --reuid=app --regid=app --init-groups \
